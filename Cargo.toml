@@ -1,0 +1,15 @@
+[package]
+name = "wavetablers"
+version = "0.1.0"
+authors = ["Ch0ronomato <schweerian33@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+colored = "2"
+
+[dependencies.coreaudio-sys]
+version = "0.2.8"
+default-features = false
+features=["audio_unit", "core_audio"]
