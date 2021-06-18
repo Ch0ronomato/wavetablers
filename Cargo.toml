@@ -8,6 +8,10 @@ edition = "2018"
 
 [dependencies]
 colored = "2"
+plotters = "0.3.1"
+plotters-backend = "0.3.0"
+quicli = "0.4"
+structopt = "0.2"
 
 [dependencies.coreaudio-sys]
 version = "0.2.8"
