@@ -9,6 +9,8 @@ use quicli::prelude::*;
 use structopt::StructOpt;
 use plotters::prelude::*;
 
+mod console;
+
 static mut audiodata:Vec<f32> = vec![];
 
 //------------------------------------------------
@@ -96,19 +98,11 @@ pub fn make_square() -> Vec<f64> {
 }
 
 fn draw(data: Vec<f64>) {
-  let drawing_area = BitMapBackend::new("images/2.1.png", (600, 400))
+  let drawing_area = console::TextDrawingBackend(vec![console::PixelState::Empty; 5000]) 
     .into_drawing_area();
 
-  drawing_area.fill(&WHITE).unwrap();
-  let twopi = std::f64::consts::PI * 2.0;
-  
-  let mut chart = ChartBuilder::on(&drawing_area)
-    .build_cartesian_2d(-0.0..(data.len() as f64), -1.2..1.0)
-    .unwrap();
-
-  chart.draw_series(
-    LineSeries::new((0..data.len()).map(|x| ((x as f64), data[x])), &BLACK),
-  ).unwrap();
+  let _x = console::draw_chart(drawing_area, data);
+  return;
 }
 
 fn main() {
