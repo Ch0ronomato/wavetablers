@@ -12,6 +12,7 @@ use plotters::prelude::*;
 mod console;
 
 static mut audiodata:Vec<f32> = vec![];
+static mut audiodataindex: usize = 0;
 
 //------------------------------------------------
 //------------APPLE STUFF-------------------------
@@ -40,13 +41,23 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     _in_number_frames: sys::UInt32,
     _io_data: *mut sys::AudioBufferList) -> sys::OSStatus {
     unsafe {
-        assert!(_in_number_frames == audiodata.len() as u32);
-        let ptr = (*_io_data).mBuffers.as_ptr() as *mut sys::AudioBuffer;
-        let len = (*_io_data).mNumberBuffers as usize;
-        let buffers = std::slice::from_raw_parts_mut(ptr, len);
-        for i in 0..2{
-            buffers[i as usize].mData = audiodata.as_ptr() as *mut c_void;
+        // assert!(_in_number_frames == audiodata.len() as u32); 
+        let channels_ptr = (*_io_data).mBuffers.as_ptr() as *mut sys::AudioBuffer;
+        let channels_len = (*_io_data).mNumberBuffers as usize;
+        let buffers = std::slice::from_raw_parts_mut(channels_ptr, channels_len);
+        for i in 0..channels_len {
+            println!("{}", apple_said_yes(&format!("Channel {}", i)));
+            let buff_size = _in_number_frames as usize * channels_len;
+            let ptr = buffers[i as usize].mData as *mut f32;
+            let mut data = std::slice::from_raw_parts_mut(ptr, buff_size);
+            for j in 0..buff_size {
+                data[j] = audiodata[audiodataindex];
+            }
         }
+        audiodataindex += _in_number_frames as usize;
+        audiodataindex = audiodataindex % SAMPLE_RATE as usize;
+        let msg = format!("Wrote up to {}", audiodataindex);
+        println!("{}", apple_said_yes(&msg));
     }
     return 0 as sys::OSStatus
 }
@@ -65,18 +76,26 @@ struct Cli {
 //------------WAVE DATA---------------------------
 //------------------------------------------------
 // Note: 440 is A
+const FREQF: f64 = 880.0f64;
+const SAMPLE_RATE: f64 = 880.0f64;
 pub fn make_sine() -> Vec<f64> {
-  (0..512)
-      .map(|x| (2f64 * std::f64::consts::PI * x as f64) / 512.0)
+  let cycles_per_sample = FREQF / SAMPLE_RATE;
+  let angle_delta = cycles_per_sample * std::f64::consts::PI * 2.0f64;
+  (0..SAMPLE_RATE as usize)
+      .map(|x| (angle_delta * x as f64) / SAMPLE_RATE)
       .map(|x| x.sin())
       .collect()
 }
 
-pub fn add_sine(signal : &mut Vec<f64>, freq: i16, amp: f64, phase: f64) {
-  for i in 0..signal.len() {
+pub fn add_sine(signal : &mut Vec<f64>, freq: f64, amp: f64, phase: f64) {
+  let twopi = std::f64::consts::PI * 2.0f64;
+
+  // audiosignal[i]+= amp * sin((TWO_PI * (i*freq) / 512) + phase);
+  for i in 0..SAMPLE_RATE as usize {
     let mut new_signal;
-    new_signal = std::f64::consts::PI * 2.0 * (i as f64 * freq as f64);
-    new_signal = new_signal / 512.0;
+    new_signal = freq * i as f64;
+    new_signal = new_signal / SAMPLE_RATE;
+    new_signal = new_signal * twopi;
     new_signal += phase;
     new_signal = new_signal.sin() * amp; 
     signal[i] += new_signal;
@@ -85,24 +104,41 @@ pub fn add_sine(signal : &mut Vec<f64>, freq: i16, amp: f64, phase: f64) {
 
 pub fn make_square() -> Vec<f64> {
   let wave = &mut make_sine();
-  let updates = 3..50;
+  let updates = 3..(20_000.0f64 - FREQF) as i32;
   for i in updates.step_by(2) {
-    add_sine(
-        wave,
-        i,
-        1.0 / i as f64,
-        0f64
-    );
+      let i_f = i as f64;
+      add_sine(
+          wave,
+          FREQF + i_f,
+          1.0 / i_f,
+          0f64
+      );
   }
   wave.to_vec()
 }
 
-fn draw(data: Vec<f64>) {
+fn draw_console(data: &Vec<f64>) {
   let drawing_area = console::TextDrawingBackend(vec![console::PixelState::Empty; 5000]) 
     .into_drawing_area();
 
-  let _x = console::draw_chart(drawing_area, data);
+  let _x = console::draw_chart(drawing_area, data.to_vec(), FREQF);
   return;
+}
+
+fn draw_png(data: &Vec<f64>) {
+  let drawing_area = BitMapBackend::new("images/wave.png", (600, 400))
+    .into_drawing_area();
+
+  drawing_area.fill(&WHITE).unwrap();
+  let twopi = std::f64::consts::PI * 2.0;
+  
+  let mut chart = ChartBuilder::on(&drawing_area)
+    .build_cartesian_2d(-0.0..(data.len() as f64), -5.5..5.5)
+    .unwrap();
+
+  chart.draw_series(
+    LineSeries::new((0..data.len()).map(|x| ((x as f64), data[x])), &BLACK),
+  ).unwrap();
 }
 
 fn main() {
@@ -111,7 +147,8 @@ fn main() {
     if !args.noplot {
         println!("In plot mode");
         let data = make_square();
-        draw(data);
+        draw_console(&data);
+        draw_png(&data);
         println!("I drew");
     } else {
         // initialize the AU
@@ -166,8 +203,8 @@ fn main() {
                 let size_ptr = &mut size as *mut _;
 
                 let fetchSampleRate = sys::AudioUnitGetProperty(instance, id, 1,  0, data_ptr, size_ptr);
-                if status == 0 as OSStatus {
-                    println!("{}", apple_said_yes("We got a thing"));
+                if fetchSampleRate == 0 as OSStatus {
+                    println!("{}", apple_said_yes(&format!("We got a thing {}", data_uninit.assume_init())));
                 }
             }
 
@@ -181,7 +218,7 @@ fn main() {
                 mFormatFlags: sys::kAudioFormatFlagIsSignedInteger | sys::kAudioFormatFlagIsPacked,
                 mChannelsPerFrame: 1, // making it mono
                 mFramesPerPacket: 1,
-                mSampleRate: 48000 as f64 // 48khz,
+                mSampleRate: 44000.0f64
             };
 
             let mut render_callback = sys::AURenderCallbackStruct {

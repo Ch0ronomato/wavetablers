@@ -152,7 +152,8 @@ impl DrawingBackend for TextDrawingBackend {
 
 pub fn draw_chart<DB: DrawingBackend>(
     b: DrawingArea<DB, plotters::coord::Shift>,
-    data: Vec<f64>
+    data: Vec<f64>,
+    freq: f64
 ) -> Result<(), Box<dyn Error>>
 where
     DB::ErrorType: 'static,
@@ -162,7 +163,7 @@ where
         .caption("Sine and Cosine", ("sans-serif", (10).percent_height()))
         .set_label_area_size(LabelAreaPosition::Left, (5i32).percent_width())
         .set_label_area_size(LabelAreaPosition::Bottom, (10i32).percent_height())
-        .build_cartesian_2d(0.0..(data.len() as f64), -1.2..1.2)?;
+        .build_cartesian_2d(0.0..freq, -1.5..1.5)?;
 
     chart
         .configure_mesh()
