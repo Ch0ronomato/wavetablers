@@ -150,7 +150,7 @@ impl DrawingBackend for TextDrawingBackend {
     }
 }
 
-pub fn draw_chart<DB: DrawingBackend>(
+fn draw_chart<DB: DrawingBackend>(
     b: DrawingArea<DB, plotters::coord::Shift>,
     data: Vec<f64>,
     freq: f64
@@ -179,4 +179,12 @@ where
     b.present()?;
 
     Ok(())
+}
+
+pub fn draw_console(data: &Vec<f64>) {
+  let drawing_area = TextDrawingBackend(vec![PixelState::Empty; 5000]) 
+    .into_drawing_area();
+
+  let _x = draw_chart(drawing_area, data.to_vec(), super::FREQF);
+  return;
 }

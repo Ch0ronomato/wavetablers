@@ -1,39 +1,25 @@
 pub extern crate coreaudio_sys as sys;
-use colored::*;
 use std::mem::size_of;
+use structopt::StructOpt;
 use std::ptr;
 use std::mem;
 use std::os::raw::c_void;
 use sys::OSStatus;
-use structopt::StructOpt;
-use plotters::prelude::*;
+use util::apple_said_yes;
+use util::apple_said_no;
 
 mod console;
+mod sounds;
+mod util;
 
 static mut FINALIZED_DATA:Vec<f64> = vec![];
 static mut SHOULD_MUTE:f32 = 0.0f32;
 static mut AUDIODATA:Vec<f32> = vec![];
 static mut AUDIODATAINDEX: usize = 0;
 
-//------------------------------------------------
-//------------APPLE STUFF-------------------------
-//------------------------------------------------
-pub fn apple_said(what: &str, more_info: &str) -> String {
-    let s = match what {
-        "yes" => format!("{}: {}", "Apple said yes", more_info).green().bold().to_string(),
-        "no" =>  format!("{}: {}", "Apple said no", more_info).red().bold().to_string(),
-        _ => String::from("")
-    };
-    s.to_string()
-}
-
-pub fn apple_said_no(more_info: &str) -> String {
-    return apple_said("no", more_info);
-}
-
-pub fn apple_said_yes(more_info: &str) -> String {
-    return apple_said("yes", more_info);
-}
+// Note: 440 is A
+const FREQF: f64 = 880.0f64;
+const SAMPLE_RATE: f64 = 880.0f64;
 
 extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     _flags: *mut sys::AudioUnitRenderActionFlags,
@@ -70,78 +56,16 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     return 0 as sys::OSStatus
 }
 
-//------------------------------------------------
-//------------CLI STUFF---------------------------
-//------------------------------------------------
-
-#[derive(Debug, StructOpt)]
-struct Cli {
-  #[structopt(long="nomute")]
-  nomute: bool
-}
-
-//------------------------------------------------
-//------------WAVE DATA---------------------------
-//----------------------square--------------------------
-// Note: 440 is A
-const FREQF: f64 = 880.0f64;
-const SAMPLE_RATE: f64 = 880.0f64;
-pub fn make_sine() -> Vec<f64> {
-  let cycles_per_sample = FREQF / SAMPLE_RATE;
-  let angle_delta = cycles_per_sample * std::f64::consts::PI * 2.0f64;
-  (0..SAMPLE_RATE as usize)
-      .map(|x| (angle_delta * x as f64) / SAMPLE_RATE)
-      .map(|x| x.sin())
-      .collect()
-}
-
-pub fn add_sine(signal : &mut Vec<f64>, freq: f64, amp: f64, phase: f64) {
-  let twopi = std::f64::consts::PI * 2.0f64;
-
-  // audiosignal[i]+= amp * sin((TWO_PI * (i*freq) / 512) + phase);
-  for i in 0..SAMPLE_RATE as usize {
-    let mut new_signal;
-    new_signal = freq * i as f64;
-    new_signal = new_signal / SAMPLE_RATE;
-    new_signal = new_signal * twopi;
-    new_signal += phase;
-    new_signal = new_signal.sin() * amp; 
-    signal[i] += new_signal;
-  }
-}
-
-pub fn make_square() -> Vec<f64> {
-  let wave = &mut make_sine();
-  let updates = 3..(20_000.0f64 - FREQF) as i32;
-  for i in updates.step_by(2) {
-      let i_f = i as f64;
-      add_sine(
-          wave,
-          FREQF + i_f,
-          1.0 / i_f,
-          0f64
-      );
-  }
-  wave.to_vec()
-}
-
-fn draw_console(data: &Vec<f64>) {
-  let drawing_area = console::TextDrawingBackend(vec![console::PixelState::Empty; 5000]) 
-    .into_drawing_area();
-
-  let _x = console::draw_chart(drawing_area, data.to_vec(), FREQF);
-  return;
-}
 
 fn main() {
-    let args = Cli::from_args();
+    let args = util::Cli::from_args();
 
     if args.nomute {
         unsafe {
             SHOULD_MUTE = 1.00f32;
         }
     }
-    unsafe { AUDIODATA = make_square().iter().map(|x| *x as f32).collect(); }
+    unsafe { AUDIODATA = sounds::make_square().iter().map(|x| *x as f32).collect(); }
     // initialize the AU
     const MANUFACTURER_IDENTIFIER: u32 = sys::kAudioUnitManufacturer_Apple; // Apple wants everything signed
     const AUDIO_TYPE: u32 = sys::kAudioUnitType_Output; // Indicates our AU will make sound
@@ -238,6 +162,6 @@ fn main() {
 
     // Print.
     unsafe {
-        draw_console(&FINALIZED_DATA);
+        console::draw_console(&FINALIZED_DATA);
     }
 }
