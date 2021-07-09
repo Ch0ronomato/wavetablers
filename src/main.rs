@@ -72,15 +72,17 @@ fn main() {
     // set the thing up like this https://stackoverflow.com/a/36970515
     let mut stream_desc = sys::AudioStreamBasicDescription {
         mReserved: 0,
-        mBytesPerFrame: size_of::<f32>() as u32,
-        mBytesPerPacket: size_of::<f32>() as u32,
+        mBytesPerFrame: size_of::<f32>() as u32 * 2,
+        mBytesPerPacket: size_of::<f32>() as u32 * 2,
         mBitsPerChannel: size_of::<f32>() as u32 * 8,
         mFormatID: sys::kAudioFormatLinearPCM,
-        mFormatFlags: sys::kAudioFormatFlagIsSignedInteger | sys::kAudioFormatFlagIsPacked,
-        mChannelsPerFrame: 1, // making it mono
+        mFormatFlags: sys::kAudioFormatFlagIsFloat | sys::kAudioFormatFlagIsPacked,
+        mChannelsPerFrame: 2,
         mFramesPerPacket: 1,
         mSampleRate: SAMPLE_RATE
     };
+    println!("{:#?}", desc);
+    panic!("");
 
 
     let component = unsafe { sys::AudioComponentFindNext(ptr::null_mut(), &desc as *const _) };
