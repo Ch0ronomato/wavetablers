@@ -4,6 +4,7 @@ use structopt::StructOpt;
 use std::ptr;
 use std::mem;
 use std::os::raw::c_void;
+use std::fs;
 use sys::OSStatus;
 use util::apple_said_yes;
 use util::apple_said_no;
@@ -18,8 +19,8 @@ static mut AUDIODATA:Vec<f32> = vec![];
 static mut AUDIODATAINDEX: usize = 0;
 
 // Note: 440 is A
-const FREQF: f64 = 880.0f64;
-const SAMPLE_RATE: f64 = 880.0f64;
+const FREQF: f64 = 440.0f64;
+const SAMPLE_RATE: f64 = 44_100.0f64;
 
 extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     _flags: *mut sys::AudioUnitRenderActionFlags,
@@ -33,22 +34,13 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     let buffers = unsafe { std::slice::from_raw_parts_mut(channels_ptr, channels_len) };
     for i in 0..channels_len {
         let buff_size = _in_number_frames as usize * channels_len;
+        assert!(buff_size == 512);
         let ptr = buffers[i as usize].mData as *mut f32;
         let data = unsafe { std::slice::from_raw_parts_mut(ptr, buff_size) };
         for j in 0..buff_size {
-            let index = unsafe {
-                if AUDIODATAINDEX + j >= AUDIODATA.len() {
-                    AUDIODATAINDEX = 0;
-                    AUDIODATAINDEX
-                } else {
-                    AUDIODATAINDEX + j
-                }
-            };
             unsafe {
-                assert!(index < AUDIODATA.len());
-                data[j] = AUDIODATA[index];
-                FINALIZED_DATA.push(data[j] as f64);
-                data[j] *= SHOULD_MUTE; // muting for now
+                data[j] = AUDIODATA[j] * 0.5f32;
+                FINALIZED_DATA.push(AUDIODATA[j] as f64);
                 AUDIODATAINDEX = AUDIODATAINDEX + 1;
             }
         }
@@ -65,7 +57,7 @@ fn main() {
             SHOULD_MUTE = 1.00f32;
         }
     }
-    unsafe { AUDIODATA = sounds::make_square().iter().map(|x| *x as f32).collect(); }
+    unsafe { AUDIODATA = sounds::make_sine().iter().map(|x| *x as f32).collect(); }
     // initialize the AU
     const MANUFACTURER_IDENTIFIER: u32 = sys::kAudioUnitManufacturer_Apple; // Apple wants everything signed
     const AUDIO_TYPE: u32 = sys::kAudioUnitType_Output; // Indicates our AU will make sound
@@ -164,4 +156,12 @@ fn main() {
     unsafe {
         console::draw_console(&FINALIZED_DATA);
     }
+    let outd: String = unsafe { 
+        (0..AUDIODATAINDEX) 
+            .map(|x| FINALIZED_DATA[x].to_string())
+            .fold(String::new(), |acc, x| {
+               acc + "\n" + &x 
+            })
+    };
+    fs::write("mywave.csv", outd).expect("wanted to dump this");
 }
