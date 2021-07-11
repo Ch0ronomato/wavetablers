@@ -16,11 +16,11 @@ fn apple_said(what: What, more_info: &str) -> String {
 }
 
 pub fn apple_said_no(more_info: &str) -> String {
-    return apple_said(What::Yes, more_info);
+    return apple_said(What::No, more_info);
 }
 
 pub fn apple_said_yes(more_info: &str) -> String {
-    return apple_said(What::No, more_info);
+    return apple_said(What::Yes, more_info);
 }
 
 //------------------------------------------------
