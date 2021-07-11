@@ -30,7 +30,9 @@ pub fn apple_said_yes(more_info: &str) -> String {
 #[derive(Debug, StructOpt)]
 pub struct Cli {
   #[structopt(long="nomute")]
-  pub nomute: bool
+  pub nomute: bool,
+  #[structopt(long="plot")]
+  pub plot: bool
 }
 
 

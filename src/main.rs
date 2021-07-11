@@ -28,6 +28,7 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     _in_bus_number: sys::UInt32,
     _in_number_frames: sys::UInt32,
     _io_data: *mut sys::AudioBufferList) -> sys::OSStatus {
+    let toplot = unsafe { *(_in_ref_con.clone() as *mut bool) };
     let d = unsafe { &mut *_io_data };
     let channels_ptr = d.mBuffers.as_ptr() as *mut sys::AudioBuffer;
     let channels_len = d.mNumberBuffers as usize;
@@ -40,12 +41,14 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
         .flat_map(|data_for_channel| unsafe { std::slice::from_raw_parts_mut(data_for_channel, buff_size) })
         .collect::<Vec<_>>();
     for i in 0..buff_size {
-        let point: f32 = unsafe { AUDIODATA[(AUDIODATAINDEX + i) % AUDIODATA.len()] } * 0.5f32;
+        let point: f32 = unsafe { AUDIODATA[(AUDIODATAINDEX + i) % AUDIODATA.len()] } * 0.01f32;
         for channel in 0..channels_len {
             *channel_data[(buff_size * channel) + i] = point;
         }
-        unsafe {
-                FINALIZED_DATA.push(point as f64);
+        if toplot {
+            unsafe {
+                    FINALIZED_DATA.push(point as f64);
+            }
         }
     }
     unsafe { AUDIODATAINDEX = (AUDIODATAINDEX + buff_size) % AUDIODATA.len() };
@@ -112,9 +115,10 @@ fn main() {
     } else {
         println!("{}", apple_said_no(&String::from(format!("{}, {}", "We failed to make an audio instance", initalize))));
     }
+    let toplot: Box<bool> = Box::new(args.plot);
     let mut render_callback = sys::AURenderCallbackStruct {
         inputProc: Some(my_input_wrapper),
-        inputProcRefCon: my_input_wrapper as *mut c_void
+        inputProcRefCon: Box::into_raw(toplot) as *mut c_void 
     };
 
     let render_callback_ref = &mut render_callback as *mut _ as *mut c_void;
@@ -156,17 +160,18 @@ fn main() {
     } else {
         println!("{}", apple_said_no(&String::from(format!("{}, {}", "We failed to unmake an audio instance", uninitalize))));
     }
-
-    // Print.
-    unsafe {
-        console::draw_console(&FINALIZED_DATA);
+    if args.plot {
+        // Print.
+        unsafe {
+            console::draw_console(&FINALIZED_DATA);
+        }
+        let outd: String = unsafe { 
+            (0..AUDIODATAINDEX) 
+                .map(|x| FINALIZED_DATA[x].to_string())
+                .fold(String::new(), |acc, x| {
+                   acc + "\n" + &x 
+                })
+        };
+        fs::write("mywave.csv", outd).expect("wanted to dump this");
     }
-    let outd: String = unsafe { 
-        (0..AUDIODATAINDEX) 
-            .map(|x| FINALIZED_DATA[x].to_string())
-            .fold(String::new(), |acc, x| {
-               acc + "\n" + &x 
-            })
-    };
-    fs::write("mywave.csv", outd).expect("wanted to dump this");
 }
