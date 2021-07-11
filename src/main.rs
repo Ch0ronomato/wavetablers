@@ -20,7 +20,7 @@ static mut AUDIODATAINDEX: usize = 0;
 
 // Note: 440 is A
 const FREQF: f64 = 440.0f64;
-const SAMPLE_RATE: f64 = 44_100.0f64;
+const SAMPLE_RATE: f64 = 48_000.0f64;
 
 extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     _flags: *mut sys::AudioUnitRenderActionFlags,
@@ -31,20 +31,24 @@ extern "C" fn my_input_wrapper(_in_ref_con: *mut c_void,
     let d = unsafe { &mut *_io_data };
     let channels_ptr = d.mBuffers.as_ptr() as *mut sys::AudioBuffer;
     let channels_len = d.mNumberBuffers as usize;
+    assert!(channels_len == 2, "Not in stereo mode yet");
     let buffers = unsafe { std::slice::from_raw_parts_mut(channels_ptr, channels_len) };
-    for i in 0..channels_len {
-        let buff_size = _in_number_frames as usize * channels_len;
-        assert!(buff_size == 512);
-        let ptr = buffers[i as usize].mData as *mut f32;
-        let data = unsafe { std::slice::from_raw_parts_mut(ptr, buff_size) };
-        for j in 0..buff_size {
-            unsafe {
-                data[j] = AUDIODATA[j] * 0.5f32;
-                FINALIZED_DATA.push(AUDIODATA[j] as f64);
-                AUDIODATAINDEX = AUDIODATAINDEX + 1;
-            }
+    let buff_size = _in_number_frames as usize * channels_len;
+    let channel_data: &mut Vec<_> = &mut buffers
+        .iter()
+        .map(|buffer| buffer.mData as *mut f32)
+        .flat_map(|data_for_channel| unsafe { std::slice::from_raw_parts_mut(data_for_channel, buff_size) })
+        .collect::<Vec<_>>();
+    for i in 0..buff_size {
+        let point: f32 = unsafe { AUDIODATA[(AUDIODATAINDEX + i) % AUDIODATA.len()] } * 0.5f32;
+        for channel in 0..channels_len {
+            *channel_data[(buff_size * channel) + i] = point;
+        }
+        unsafe {
+                FINALIZED_DATA.push(point as f64);
         }
     }
+    unsafe { AUDIODATAINDEX = (AUDIODATAINDEX + buff_size) % AUDIODATA.len() };
     return 0 as sys::OSStatus
 }
 
@@ -81,8 +85,7 @@ fn main() {
         mFramesPerPacket: 1,
         mSampleRate: SAMPLE_RATE
     };
-    println!("{:#?}", desc);
-    panic!("");
+    println!("{:#?} {:#?}", desc, stream_desc);
 
 
     let component = unsafe { sys::AudioComponentFindNext(ptr::null_mut(), &desc as *const _) };
