@@ -275,6 +275,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "coreaudio-rs"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f229761965dad3e9b11081668a6ea00f1def7aa46062321b5ec245b834f6e491"
+dependencies = [
+ "bitflags",
+ "coreaudio-sys",
+]
+
+[[package]]
 name = "coreaudio-sys"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1341,6 +1351,7 @@ name = "wavetablers"
 version = "0.1.0"
 dependencies = [
  "colored",
+ "coreaudio-rs",
  "coreaudio-sys",
  "plotters",
  "plotters-backend",
