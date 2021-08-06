@@ -181,10 +181,10 @@ where
     Ok(())
 }
 
-pub fn draw_console(data: &Vec<f64>) {
+pub fn draw_console(data: &Vec<f64>, freqf: f64) {
   let drawing_area = TextDrawingBackend(vec![PixelState::Empty; 5000]) 
     .into_drawing_area();
 
-  let _x = draw_chart(drawing_area, data.to_vec(), super::FREQF);
+  let _x = draw_chart(drawing_area, data.to_vec(), freqf);
   return;
 }
