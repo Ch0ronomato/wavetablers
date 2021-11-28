@@ -1,5 +1,7 @@
 extern crate coreaudio;
 
+use std::sync::{Arc, Mutex};
+use std::convert::TryInto;
 use coreaudio::audio_unit::{AudioUnit, IOType, SampleFormat};
 use coreaudio::audio_unit::render_callback::{self, data};
 use structopt::StructOpt;
@@ -17,10 +19,9 @@ const SAMPLE_RATE: f64 = 44_100.0f64;
 struct Wavetable {
     frequency: std::vec::Vec<f32>,
     frequency_phase: std::vec::Vec<f32>,
-    audio_data_index: usize,
+    audio_data_index: f32,
     table_size: usize,
-    should_mute: bool,
-    will_plot: bool,
+    shape: f32,
 }
 
 impl Wavetable {
@@ -47,10 +48,9 @@ impl Wavetable {
         Wavetable {
             frequency: vec![0f32; 1],
             frequency_phase: vec![0f32; 1],
-            table_size: 2i32.pow(8) as usize,
-            audio_data_index: 0,
-            should_mute,
-            will_plot,
+            table_size: 2i32.pow(12) as usize,
+            audio_data_index: 0.0f32,
+            shape: 0.5f32,
         }
     }
 
@@ -85,20 +85,21 @@ impl Iterator for Wavetable {
     //   440       * (   128       /   44_100     ) =
     //            1.277097506 
     fn next(&mut self) -> Option<f32> {
-        let square_wave_duty_cycle = 0.5f32;
         let mut current_sample = 0f32;
-        let lead_index = self.audio_data_index as i32 as f32;
+        let table_size_f32 = self.table_size as i32 as f32;
         for (_, phase) in self.frequency.iter().zip(self.frequency_phase.iter()) {
-            for i in 0..phase.ceil() as i32 {
-                let current_location_in_wave = lead_index + i as f32;
-                current_sample += (current_location_in_wave < phase * square_wave_duty_cycle) as i32 as f32;
+            let new_audio_data_index = self.audio_data_index + phase;
+            current_sample = if new_audio_data_index < table_size_f32 * self.shape { -1.0f32 } else { 1.0f32 };
+            self.audio_data_index = new_audio_data_index;
+            if self.audio_data_index > table_size_f32 {
+                self.audio_data_index -= table_size_f32;
             }
-            self.audio_data_index += 1;
-            if self.audio_data_index > self.table_size {
-                self.audio_data_index -= self.table_size;
+            self.shape -= 0.0001f32;
+            if self.shape < 0.05f32 {
+                self.shape = 0.5f32;
             }
         }
-        Some(current_sample * if self.should_mute { 0.2f32 } else { 0.05f32 })
+        Some(current_sample)
     }
 }
 
@@ -123,10 +124,31 @@ fn main() -> Result<(), coreaudio::Error>{
     assert!(SampleFormat::F32 == stream_format.sample_format);
 
     type Args = render_callback::Args<data::NonInterleaved<f32>>;
+    let export = Arc::new(Mutex::new(std::vec::Vec::<f32>::new()));
+    let writer = export.clone();
+    // Inspiration for the redesign
+    // This is a separate thread.
+    //
+    // let mut u = format!("{:?}", std::thread::current().id());
+    // u = apple_said_no(&u);
+    // println!("{}", u);
+    //
+    // if you execute this code in both the render callback and outside
+    // you'll get two separate thread IDs. That means that whatever we 
+    // implement, we actually need to have it be able to cross thread
+    // boundaries.
+    //
+    // Interestingly, we need to have an exclusive reference to use an 
+    // iterator in Rust. I think that maybe the core of the issue here. 
+    // We need to have some type that is safe to use across thread boundaries
+    // but in addition to that, we need to also have it only need a immutable reference
     audio_unit.set_render_callback(move |args| {
         let Args { num_frames, mut data, .. } = args;
         for i in 0..num_frames {
             let sample = samples.next().unwrap();
+            if let Ok(mut i) = writer.lock() {
+                i.push(sample);
+            }
             for channel in data.channels_mut() {
                 channel[i] = sample;
             }
@@ -136,6 +158,10 @@ fn main() -> Result<(), coreaudio::Error>{
     let res = audio_unit.start();
 
     std::thread::sleep(std::time::Duration::from_millis(10000));
+    audio_unit.stop()?;
+    if let Ok(i) = export.lock() {
+        println!("{:?}", i);
+    }
     /*
     println!("{}", apple_said_yes(&"Adding Db"));
     std::thread::sleep(std::time::Duration::from_millis(3000));
